@@ -1,0 +1,403 @@
+---
+title: "Data"
+author: "Gergel Anastasia"
+date: "12/9/2018"
+output: 
+  html_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(comment=NA, message=FALSE, warning=FALSE)
+```
+
+# ------------------------------------------------------------- #
+# ------------------- Human Rights Scores --------------------- #
+# ------------------------------------------------------------- #
+
+We''ll be working with the `latentmean` and `latentstd` variables only since they are continuous and have not any instrument bias (measured by the Bayesian dynamic item-response function, posterior distribution). 
+```{r}
+HumanRightsProtectionScores <- read.csv("HRS.csv")
+sub <- c(HumanRightsProtectionScores$COWc, HumanRightsProtectionScores$year)
+which(duplicated(sub))
+
+
+# setwd("/Users/herrhellana/Documents/_Maths&Data analysis/Stats 3 year/Home assignments/Essay")
+HumanRightsProtectionScores <- read.csv("HumanRightsProtectionScores_v2.04.csv")
+HumanRightsProtectionScores <- HumanRightsProtectionScores[, c("YEAR", "COW", "latentmean", "latentsd")]
+colnames(HumanRightsProtectionScores)[1] <- "year"
+
+HumanRightsProtectionScores["COWc"] <- countrycode(HumanRightsProtectionScores$COW, 'cown', 'cowc')
+# HumanRightsProtectionScores <- HumanRightsProtectionScores[, -2]
+
+
+# get rid of NAs while country code transplating
+HumanRightsProtectionScores[which(HumanRightsProtectionScores$COW >= 666 & HumanRightsProtectionScores$COW <= 667), "COWc"] <- "ISR"
+
+HumanRightsProtectionScores[which(HumanRightsProtectionScores$COW == 260), "COWc"] <- "GFR"
+
+HumanRightsProtectionScores[which(HumanRightsProtectionScores$COW == 816), "COWc"] <- "DRV"
+
+# data available from 1949 to 2013
+(c(min(HumanRightsProtectionScores$year), max(HumanRightsProtectionScores$year)))
+
+# we need 1960-2013 only
+HumanRightsProtectionScores <- HumanRightsProtectionScores[which(HumanRightsProtectionScores$year >= 1960), ]
+
+write.csv(file = "/Users/herrhellana/Documents/_Maths&Data analysis/Stats 3 year/Home assignments/Essay/HRS.csv", x = HumanRightsProtectionScores)
+```
+
+__From the documentation__: 
+
+"The latent variable is the posterior mean so you can use that as the DV. You can just use a standard OLS with this DV since it is continuous. You also don't need to worry about the uncertainty of the estimates (captured by the standard deviation) because the error term in the OLS will capture this uncertainty. However, if you used a lagged DV you should try and incorporate this uncertainty. This can be done using simulations. I discuss this procedure in the paper."
+
+__In addtition, one note to the country coding__: 
+
+"One final note, 666.001, 666.002, 666.003 are listed as cow codes because of extra reports produced from some years in the state department reports and coded by the PTS team. 
+666 --- Israel
+666.001 --- Israel, pre-1967 borders
+666.002 --- Israel, occupied territories only
+666.003 --- Palestinian Authority". 
+
+More abuse -- `latentmean` below zero. 
+
+# ------------------------------------------------------------- #
+# -------------------------- SWIID ---------------------------- #
+# ------------------------------------------------------------- #
+```{r}
+library(dplyr)
+load("swiid7_1.rda")
+
+swiid_summary <- as.data.frame(swiid_summary)
+```
+
+
+# ------------------------------------------------------------- #
+# ----------------------- World Bank --------------------------- #
+# ----------------------- Foreign aid -------------------------- #
+# -------------------------------------------------------------- #
+
+Foreign Aid: Net official development assistance and official aid received (constant 2015 US$).
+```{r}
+library(wbstats)
+WorldBankForeignAid <- wb(indicator = "DT.ODA.ALLD.KD")
+
+# delete `IndicatorID` and `Indicator` columns
+WorldBankForeignAid <- WorldBankForeignAid[, -4:-5] 
+colnames(WorldBankForeignAid)[3] <- "ForeignAid" # rename a `value` column
+colnames(WorldBankForeignAid)[2] <- "year" # rename a `date` column
+
+
+# create a vector with COW country codes
+WorldBankForeignAid["COWc"] <- countrycode(WorldBankForeignAid$iso3c, 'iso3c', 'cowc')
+
+# drop variables with region data
+WorldBankForeignAid <- na.omit(WorldBankForeignAid, cols = "COWc")
+
+# drop unnecessary columns
+WorldBankForeignAid <- WorldBankForeignAid[, c(2, 3, 6)]
+
+# data available from 1960 to 2016
+(c(min(WorldBankForeignAid$year), max(WorldBankForeignAid$year)))
+```
+
+
+
+
+
+
+
+# --------------------------------------------------------------- #
+# ----------------------- Madison Project ----------------------- #
+# -------------------- real GDPpc + growth ---------------------- #
+# --------------------------------------------------------------- #
+
+```{r}
+####
+library(readstata13)
+mpd <- read.dta13("mpd2018.dta")
+
+mpd <- mpd %>% group_by(country) %>% 
+  mutate(rgdpnapc_l1 = lag(rgdpnapc, n=1), # lagged GDP
+    gdppc_growth = (rgdpnapc-rgdpnapc_l1)/rgdpnapc_l1) # GDP growth
+
+mpd[, "logGDPpc"] <- log(mpd$rgdpnapc)
+mpd[, "logPOP"] <- log(mpd$pop)
+
+# create a vector with COW country codes
+mpd["COWc"] <- countrycode(mpd$countrycode, 'iso3c', 'cowc')
+mpd[which(mpd$countrycode == "CSK"), "COWc"] <- "CZE"
+mpd[which(mpd$countrycode == "SRB"), "COWc"] <- "YUG"
+mpd[which(mpd$countrycode == "YUG"), "COWc"] <- "YUG"
+mpd[which(mpd$countrycode == "SUN"), "COWc"] <- "RUS"
+# 165 countries
+
+# drop unnecessary columns
+mpd <- mpd[, c(3, 5, 6, 9:13)]
+
+# data from the Jesus birth to 2016
+(c(min(mpd$year), max(mpd$year)))
+
+# we need 1960-2013 only
+mpd <- mpd[which(mpd$year >= 1960), ]
+```
+
+`cgdppc` GDP per capita that relies on a single cross-country price comparison, for 2011. 
+__Log(real GDP per capita)__, __log(population)__, __econ growth per capita__, __real GDP per capita__. 
+
+ADDITIONAL with WB
+Merge these two economic datasets:
+```{r}
+library(countrycode)
+
+econ <- merge(WorldBankForeignAid, mpd, by=c("COWc", "year"))
+
+# ------------------------------ #
+# Foreign Aid logged per capita
+# first divide by population!
+# ------------------------------ #
+
+# declare all values <= 0 to be 1 (we need to take a log)
+econ[econ$ForeignAid <= 0, "ForeignAid"] <- 1
+econ["logFApc"] <- log(econ$ForeignAid/econ$pop)
+```
+
+Plus __Foreign Aid per capita logged__.
+
+
+
+
+
+# ------------------------------------------------------------- #
+# ------------------- CNTS dataset ---------------------------- #
+# ------------------- Political activism ---------------------- #
+# ------------------------------------------------------------- #
+
+General Strikes (domestic2).
+Guerrilla Warfare (domestic3).
+Riots (domestic6).
+Revolutions (domestic7).
+Anti-government Demonstrations (domestic8).
+
+```{r}
+library(foreign)
+library(dplyr)
+
+CNTS <- read.spss("banks.sav", to.data.frame=TRUE)
+CNTS <- CNTS %>% select(year, c_names, country, cnts_domestic2, cnts_domestic3, cnts_domestic6, cnts_domestic7, cnts_domestic8)
+
+CNTS["COWc"] <- countrycode(CNTS$c_names, "country.name", "cowc")
+CNTS[which(CNTS$c_names == "German FR                                 "), "COWc"] <- "GFR"
+CNTS[which(CNTS$c_names == "Serbia                                    "), "COWc"] <- "YUG"
+
+CNTS <- CNTS[, -c(2, 3)] # delete two country variables (not CWOc)
+
+# data available from 1919 to 2016
+(c(min(CNTS$year), max(CNTS$year)))
+# need only from 1960
+CNTS <- CNTS[which(CNTS$year >= 1960), ]
+
+write.csv(file = "/Users/herrhellana/Documents/_Maths&Data analysis/Stats 3 year/Home assignments/Essay/CNTS.csv", x = CNTS)
+```
+
+
+
+# ------------------------------------------------------------- #
+# -------------------------- V-DEM ---------------------------- #
+# ------------------------------------------------------------- #
+
+```{r}
+V_DEM <- read.csv("V-Dem-CY+Others-v8.csv")
+
+V_DEM_small <- V_DEM %>% select(c("COWcode", "year", "v2x_polyarchy", "v2x_corr", "v2mecorrpt", "v2mecenefm", "v2mecenefi", "v2mecenefibin", "v2mecrit", "e_miinterc", "e_Civil_War", "v2csprtcpt", "v2csantimv"))
+
+V_DEM_small["COWc"] <- countrycode(V_DEM_small$COWcode, "cown", "cowc")
+
+V_DEM_small[which(V_DEM_small$COWcode == 260), "COWc"] <- "GFR"
+V_DEM_small[which(V_DEM_small$COWcode == 816), "COWc"] <- "DRV"
+V_DEM_small[which(V_DEM_small$COWcode == 730), "COWc"] <- "KOR"
+
+
+# data available from 1789 to 2017
+(c(min(V_DEM_small$year), max(V_DEM_small$year)))
+# need only from 1960
+V_DEM_small <- V_DEM_small[which(V_DEM_small$year >= 1960), ]
+
+write.csv(file = "/Users/herrhellana/Documents/_Maths&Data analysis/Stats 3 year/Home assignments/Essay/V_DEM_small.csv", x = V_DEM_small)
+```
+
+`v2x_polyarchy` -- electoral democracy.
+`v2x_corr` -- corruption.
+(`v2meaccess` -- media access. )
+`v2mecorrpt` -- media corrupt. 
+`v2mecenefm` -- media censorship by the government. 
+`v2mecenefi` -- internet censorship. 
+`v2mecenefibin` -- internet binary. 
+`v2mecrit` -- print/broadcast media critical to the government.
+
+`e_miinterc` -- internal armed conflict.
+`e_Civil_War` -- binary for Civil wars.
+
+`v2csprtcpt` -- CSO participatory environment.
+`v2csantimv` -- CSO anti-system movements. 
+
+
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------- #
+# --------------------- Merging the Data ---------------------- #
+# ------------------------------------------------------------- #
+Merge the data from 1960 to 2013 (because of HRS limitations) by countries. 
+
+```{r}
+polit <- merge(HumanRightsProtectionScores, V_DEM_small, by=c("COWc", "year"))
+# 180 countries
+
+data <- merge(polit, CNTS, by=c("COWc", "year")) # 179 countries
+data <- merge(data, mpd, by=c("COWc", "year"))
+
+data <- data[, -c(3, 6)]
+
+# all countries we include:
+countrycode(unique(data$COWc), "cowc", "country.name")
+
+write.csv(file = "/Users/herrhellana/Documents/_Maths&Data analysis/Stats 3 year/Home assignments/Essay/FinalDATA.csv", x = data)
+```
+
+Total: 161 country. Periods: 1960-2013. We have 7844 observations out of 8533. Good enough. So we've got `nrow(data)/(161*53)` = 92% of data. 
+
+```{r}
+# creating a balanced panel. Almowt nothing changed. 54 time periods and 160 countries. 
+# missing.at.least.one <- unique(subset1$COWc[!complete.cases(subset1)])
+# subset2 <- subset1[!(subset1$COWc %in% missing.at.least.one),]
+
+nrow(data)/(161*53)
+```
+
+
+# --------------------- Visualization ---------------------- #
+
+
+```{r}
+library(ggplot2)
+
+# repressions density
+plot(density(data$latentmean), col = heat.colors(18))
+
+
+RUSSIAset <- RUSSIAset[which(RUSSIAset$year >= 1991), ]
+write.csv(file = "/Users/herrhellana/Documents/_Maths&Data analysis/Stats 3 year/Home assignments/Essay/RUSSIAset.csv", x = RUSSIAset)
+
+ggplot(data=RUSSIAset,
+        aes(x = year)) +
+        geom_line(aes(y = latentmean)) + 
+        geom_line(aes(y = gdppc_growth)) + 
+        theme_minimal()
+
+
+ggplot(data=RUSSIAset,
+        aes(x = year, y = latentmean)) +
+        # geom_line() + 
+        geom_line(aes(color = gdppc_growth)) + 
+        theme_minimal()
+
+ggplot(data=RUSSIAset,
+       aes(x = year, y = latentmean)) +
+       geom_area(aes(color = gdppc_growth, fill = gdppc_growth)) + 
+       theme_minimal()
+
+
+
+
+
+
+ggplot(data=RUSSIAset,
+         aes(x = year, y = gdppc_growth)) +
+         geom_line() + 
+         theme_minimal()
+
+ggplot(data=RUSSIAset,
+         aes(x = year, y = v2x_polyarchy)) +
+         geom_line() + 
+         theme_minimal()
+
+ggplot(data=RUSSIAset,
+         aes(x = year, y = v2mecorrpt)) +
+         geom_line() + 
+         theme_minimal()
+```
+
+Scale econ growth and repressions:
+x - min/x - max
+
+```{r}
+# grid 4x4. 
+# rows = quartile of activism
+
+ggplot(data=RUSSIAset,
+        aes(x = year)) +
+        geom_line(aes(y = ((latentmean - min(latentmean))/(max(latentmean) - min(latentmean))), color = "red3")) + 
+        geom_line(aes(y = ((gdppc_growth - min(gdppc_growth))/(max(gdppc_growth) - min(gdppc_growth))), color = "navy")) +
+        theme_minimal() + 
+        labs(x = "years", y = "") + 
+        ggtitle("Dynamics of repressions and economic growth in Russia, 1991-2013") + 
+        theme(axis.title = element_text(size=8)) +
+        theme(plot.title = element_text(size=10)) +
+        scale_color_hue(labels = c("GDP growth", "repressions"))
+
+ggsave("Repressions_EconGrowth.png", plot = last_plot(), device = png(), path = "/Users/herrhellana/Desktop",
+  scale = 1, dpi = "retina", width = 8, height = 4, limitsize = TRUE)
+```
+
+
+Repression density:
+```{r}
+ggplot(RUSSIAset, aes(x=latentmean))+
+  geom_density(color="tomato4", fill="tomato", alpha=0.4) +
+  xlab("repression variable values") + 
+  theme(axis.title = element_text(size=9, hjust=0.4)) +
+  ggtitle("Repressions in Russia, 1991-2013") +
+  theme(plot.title = element_text(size=10)) 
+
+ggsave("Repressions_Density.png", plot = last_plot(), path = "/Users/herrhellana/Desktop", scale = 1, dpi = "retina", width = 6.5, height = 4)
+
+
+spline_int <- as.data.frame(spline(RUSSIAset$year, RUSSIAset$latentmean))
+ggplot(RUSSIAset) + 
+  geom_point(aes(x=year, y = latentmean, colour=latentmean), size = 2) +
+  geom_line(data = spline_int, aes(x = x, y = y)) + 
+  ggtitle("Distribution of repressions in Russia, 1991-2013") +
+  theme(plot.title = element_text(size=10)) +
+  ylab("repression values") +
+  theme(axis.title = element_text(size=9))
+
+ggsave("Repressions_Dist.png", plot = last_plot(), path = "/Users/herrhellana/Desktop", scale = 1, dpi = "retina", width = 6.5, height = 4)
+```
+
+
+Check if the panel is balanced. the number of countries per year, number of years per countries -- visualize two graphs (or count). 
+
+
+
+
+```{r}
+ggplot(data=subset[which(subset$COWc == "NOR"), ],
+        aes(x = year)) +
+        geom_line(aes(y = ((latentmean - min(latentmean))/(max(latentmean) - min(latentmean))), color = "red3")) + 
+        geom_line(aes(y = ((gdppc_growth - min(gdppc_growth))/(max(gdppc_growth) - min(gdppc_growth))), color = "navy")) +
+        theme_minimal() + 
+        labs(x = "years", y = "") + 
+        ggtitle("Dynamics of repressions and economic growth in Saudi Arabia, 1960-2013") + 
+        theme(axis.title = element_text(size=8)) +
+        theme(plot.title = element_text(size=10)) +
+        scale_color_hue(labels = c("GDP growth", "repressions"))
+
+ggsave("SAU_growth_repr.png", plot = last_plot(), path = "/Users/herrhellana/Desktop", scale = 1, dpi = "retina", width = 6.5, height = 4)
+```
+
