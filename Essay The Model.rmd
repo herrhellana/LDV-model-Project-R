@@ -1,0 +1,364 @@
+---
+title: "Essay The Model"
+author: "Gergel Anastasia"
+date: "12/14/2018"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(comment=NA, message=FALSE, warning=FALSE)
+```
+
+```{r}
+library(stargazer)
+library(dplyr)
+```
+
+Please cite as: 
+
+ Hlavac, Marek (2018). stargazer: Well-Formatted Regression and Summary Statistics Tables.
+ R package version 5.2.2. https://CRAN.R-project.org/package=stargazer 
+
+
+Too many NA's in `v2mecenefi` and `v2mecenefibin` -- internet censorship and internet binary. 
+```{r}
+setwd("/Users/herrhellana/Dropbox/_Maths&Data analysis/Stats 3 year/Home assignments/Essay")
+data <- read.csv("FinalDATA.csv")
+summary(data)
+# stargazer(data)
+
+
+
+
+# ------------------------- #
+# Remove duplicates
+# ------------------------- #
+
+sub <- cbind(as.character(data$COWc), data$year)
+which(duplicated(sub))  # print duplicates. That's Russia, YUG and some others. Obviously
+
+library(plm)
+data <- data[-which(duplicated(sub)), ] # remove duplicates from the dataset
+FinalData <- pdata.frame(data, index = c("COWc", "year"), # declare a PD
+                         row.names = TRUE)
+
+#################### WARNING: ####################
+# DO NOT EVER LOAD PLM PACKAGE BEFORE THIS TRANSFORMATION
+# cause otherwise it would mess with the lag function 
+# (plm and dplyr are not compatible)
+
+detach("package:plm", unload=TRUE)
+
+# create a lagged repression variable
+# create a new database with lagged variables 
+data <- data %>% group_by(COWc) %>% 
+  mutate(LAGlatent = lag(latentmean, n=1),
+         LAG2latent = lag(latentmean, n=2),
+         LAGgrowth = lag(gdppc_growth, n=1),
+         LAG3growth = lag(gdppc_growth, n=3), 
+         LAGriots = lag(cnts_domestic6, n=1),
+         LAGprotests = lag(cnts_domestic8, n=1),
+         LAGmedia = lag(v2mecenefm, n=1))
+
+write.csv(file = "/Users/herrhellana/Documents/_Maths&Data analysis/Stats 3 year/Home assignments/Essay/FinalDataLatent.csv", x = data)
+```
+
+
+NA's for GDP per capita (length = 46) in ALG (1962-69), KUW (1961-73), QAT (1971-73), UAE (1973-84). 
+`e_Civil_War` is a better control variable (less NA's). 
+
+# ---------------------------------------------------- #
+# -------------------- Visualization ----------------- #
+# ---------------------------------------------------- #
+Repressions density: 
+```{r}
+library(ggplot2)
+
+ggplot(data, aes(x=latentmean))+
+  geom_density(color="tomato4", fill="tomato", alpha=0.4) +
+  xlab("repression variable values") + 
+  theme(axis.title = element_text(size=9, hjust=0.4)) +
+  ggtitle("Repressions worlwide density, 1960-2013") +
+  theme(plot.title = element_text(size=10)) 
+
+# autocracies
+ggplot(data[which(data$v2x_polyarchy <= 0.5), ], aes(x=latentmean))+
+  geom_density(color="tomato4", fill="tomato", alpha=0.4) +
+  xlab("repression variable values") + 
+  theme(axis.title = element_text(size=9, hjust=0.4)) +
+  ggtitle("Repressions density in Autocracies, 1960-2013") +
+  theme(plot.title = element_text(size=10)) 
+
+# democracies
+ggplot(data[which(data$v2x_polyarchy >= 0.5), ], aes(x=latentmean))+
+  geom_density(color="lightblue1", fill="lightblue", alpha=0.4) +
+  xlab("repression variable values") + 
+  theme(axis.title = element_text(size=9, hjust=0.4)) +
+  ggtitle("Repressions density in Democracies, 1960-2013") +
+  theme(plot.title = element_text(size=10)) 
+
+
+
+# negative econ growth
+ggplot(data[which(data$gdppc_growth >= 0.5), ], aes(x=latentmean))+
+  geom_density(color="lightblue1", fill="lightblue", alpha=0.4) +
+  xlab("repression variable values") + 
+  theme(axis.title = element_text(size=9, hjust=0.4)) +
+  ggtitle("Repressions density in Democracies, 1960-2013") +
+  theme(plot.title = element_text(size=10)) 
+```
+
+Create a subset to work with. 
+
+```{r}
+# subset with variables needed
+subset <- data %>% select("COWc", "year", "latentmean", "latentsd", 
+                          "LAGlatent", "LAG2latent", "gdppc_growth", "LAGgrowth", "LAG3growth", "cnts_domestic6", "LAGriots", "cnts_domestic8", "LAGprotests", 
+                          "v2mecenefm", "LAGmedia", "v2x_polyarchy", "v2x_corr", "v2mecrit", "logGDPpc", "logPOP") 
+
+
+subset <- na.omit(subset)
+# we've left with 82% of observations
+nrow(subset)/(161*53)
+```
+
+
+# ---------------------------------------------------- #
+# ----------------------- MODEL ---------------------- #
+# ---------------------------------------------------- #
+
+Simple models. 
+```{r}
+# library(plm)
+library(pcse)
+library(foreign)
+
+
+# first, specify the model without a within-group transformation, use lm function
+ols <- lm(latentmean ~ gdppc_growth + cnts_domestic6 + v2x_polyarchy + v2mecenefm + v2x_corr + logPOP + logGDPpc, data = subset)
+summary(ols)
+```
+
+
+
+# ---------------------------------------------------- #
+# ------------------ DYNAMIC MODELS ------------------ #
+# ---------------------------------------------------- #
+
+From CNTS: 
+General Strikes (`domestic2`).
+Guerrilla Warfare (`domestic3`).
+Riots (`domestic6`).
+Revolutions (`domestic7`).
+Anti-government Demonstrations (`domestic8`).
+
+```{r}
+#################################
+       # Bunch of tests
+#################################
+
+# first, specify the model without a within-group transformation, use lm function
+ols <- lm(latentmean ~ gdppc_growth, data = subset)
+summary(ols)
+# second, use pcse
+pcse <- pcse(ols, groupN = ols$country, groupT = ols$time)
+summary(pcse)
+
+#################
+# Within model (estimate by using "plm")
+model0 <- plm(latentmean ~ gdppc_growth + logPOP + logGDPpc, effect = "twoways", data = subset, index=c("COWc", "year"), model="within")
+summary(model0, vcov = vcovBK) # Beck-Katz panel-corrected errors
+
+model1 <- plm(latentmean ~ gdppc_growth + v2mecenefm + cnts_domestic6 + v2x_polyarchy + logPOP + logGDPpc, effect = "twoways", data = subset, index=c("COWc", "year"), model="within")
+summary(model1, vcov = vcovBK)
+
+model2 <- plm(latentmean ~ gdppc_growth*v2x_polyarchy + v2mecenefm + cnts_domestic6 + logPOP + logGDPpc, effect = "twoways", data = subset, index=c("COWc", "year"), model="within")
+summary(model2, vcov = vcovBK)
+stargazer(model0, model1, model2)
+
+ols <- plm(latentmean ~ gdppc_growth + v2mecenefm + cnts_domestic6 + v2x_polyarchy + logPOP + logGDPpc, data=subset, index=c("COWc", "year"), model="pooling")
+summary(ols)
+pFtest(model0, ols) # significant effects
+
+
+# test for serial correlation 
+pdwtest(model0, alternative = "two.sided") # Durbin-Watson (AR1)
+pbgtest(model1, order = 1) # Breusch-Godfrey 
+
+
+
+# define the dependence with ACF and PACF
+residuals <- model2$residuals
+acf(residuals) # correlogram suggest to include lots of lags
+# pacf(res)
+# VERY SIGNIFICANT LAGS
+# acf is about variance. pcf -- about moving average. 
+
+
+
+####################################################
+#                 DYNAMIC MODELS
+####################################################
+library(dyn)
+# controls (logPOP, logGDPpc)
+# advanced controls (v2mecenefm, v2x_corr)
+LDV2_residuals <- ldv_lag2$residuals
+
+ldv_lag2 <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + LAG2latent
+                  + v2mecenefm 
+                  + v2x_polyarchy #+ cnts_domestic6
+                  + logPOP + logGDPpc + v2x_corr, data=subset) # controls
+summary(ldv_lag2, vcov=vcovBK)
+
+stargazer(ldvBASE, ldv_demo_inter, ldv_media_inter, ldv_lag2)
+
+# (0) baseline LDV 
+ldvBASE <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + v2mecenefm 
+                  + v2x_polyarchy #+ cnts_domestic6
+                  + logPOP + logGDPpc + v2x_corr, data=subset) # controls
+summary(ldvBASE, vcov=vcovBK)
+
+BaselineLDV_residuals <- ldvBASE$residuals
+acf(BaselineLDV_residuals) # include more lags
+
+
+# (1) LDV + intercation (polyarchy)
+ldv_demo_inter <- dyn$lm(latentmean ~ gdppc_growth*v2mecenefm + LAGlatent +
+                    v2x_polyarchy + v2x_corr +
+                    + cnts_domestic6 + logPOP + logGDPpc, data=subset)
+summary(ldv_demo_inter)
+# =>  do not include
+
+# (1.2) LDV + intercation (media)
+ldv_media_inter <- dyn$lm(latentmean ~ gdppc_growth*v2x_polyarchy + LAGlatent +
+                    v2x_corr + v2mecenefm +
+                    + cnts_domestic6 + logPOP + logGDPpc, data=subset)
+summary(ldv_media_inter)
+
+#########################
+#########################
+# (2) ADL: lagged econ growth
+# not good
+adl_growth <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + LAGgrowth + 
+                       v2mecenefm + v2x_polyarchy + v2x_corr +
+                       cnts_domestic6 + logPOP + logGDPpc, data=subset)
+summary(adl_growth, adl_repr)
+# no lag's influence 
+stargazer(adl_growth, adl_repr, adl_latent_2growth, adl_inter)
+
+
+# (3) ADL: lagged repressions
+# good
+adl_repr <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + LAG2latent +
+                      v2x_polyarchy + v2x_corr +
+                      v2mecenefm + v2x_polyarchy +
+                      logPOP + logGDPpc, data=subset)
+summary(adl_repr)
+acf(adl_repr$residuals)
+
+
+# (4) ADL: lagged econ growth + lagged2 repr
+# good
+adl_latent_2growth <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + LAG2latent + LAGgrowth + v2mecenefm + 
+                       v2x_polyarchy + v2x_corr +
+                       logPOP + logGDPpc, data=subset)
+summary(adl_latent_2growth)
+acf(adl_latent_2growth$residuals)
+
+#(5) interaction
+
+adl_inter <- dyn$lm(latentmean ~ gdppc_growth*v2x_polyarchy + LAGlatent + LAG2latent +
+                      v2x_polyarchy + v2x_corr +
+                      v2mecenefm +
+                      logPOP + logGDPpc, data=subset)
+summary(adl_inter)
+
+######################
+# best model without media: elect demo is signif
+adl_no_media <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + LAGgrowth + 
+    LAG2latent + cnts_domestic6 + v2x_corr +
+      v2x_polyarchy + logPOP + logGDPpc, data = subset)
+summary(adl_no_media)
+
+# best model without media, corr: elect demo is signif
+adl_no_media_corr <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + LAGgrowth + 
+    LAG2latent + cnts_domestic6 + 
+      v2x_polyarchy + logPOP + logGDPpc, data = subset)
+summary(adl_no_media_corr)
+
+adl_no_media_corr_inter <- dyn$lm(latentmean ~ gdppc_growth + v2x_polyarchy + LAGlatent + LAGgrowth + 
+    LAG2latent +  
+    logPOP + logGDPpc, data = subset)
+summary(adl_no_media_corr_inter)
+
+
+######################
+# fixed effects
+adl_fe <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + LAGgrowth + 
+    LAG2latent + v2mecenefm + v2x_polyarchy + v2x_corr + 
+      cnts_domestic6 + as.factor(COWc) +
+    logPOP + logGDPpc, data = subset)
+```
+
+
+Compare the model and upload the results. 
+```{r}
+# compare different LDV+riots, LDV+riots+more controls
+
+# 6 models
+# LDV simple. (ldv_riots)
+# ADL: lagged econ growth (adl_growth)
+# ADL: lagged riots (adl_riots)
+# ADL: lagged all (adl_all)
+
+# LDV: 2 lagged repression
+# LDV + more controls (ldv_riots_control)
+
+stargazer(ldvBASE, ldv_media_inter, adl_media, title="Compare specifications for media")
+
+stargazer(ldvBASE, adl_growth, adl_3latent, adl_latent_2growth, title="Compare ADL models with the base LDV")
+
+stargazer(subset, title = "Data variables summary")
+```
+
+
+For adl we do not need gmm estimator (limits ols estimator), since glm обощает все instrumental variables. 
+
+
+Informational criteria:
+Given a set of candidate models for the data, the preferred model is the one with the minimum AIC value. Thus, AIC rewards goodness of fit (as assessed by the likelihood function), but it also includes a penalty that is an increasing function of the number of estimated parameters. The penalty discourages overfitting, because increasing the number of parameters in the model almost always improves the goodness of the fit.
+```{r}
+# ACI informational criteria
+AIC(ldvBASE)
+AIC(ldv_media_inter)
+AIC(adl_media)
+AIC(adl_growth)
+AIC(adl_3latent) # the best = no autocorrelation
+AIC(adl_latent_2growth) # the second best
+
+# all together
+AIC(adl_latent_2growth, adl_3latent, adl_growth, adl_media, ldv_media_inter, ldvBASE)
+
+
+
+# BIC
+BIC(adl_latent_2growth, adl_3latent, adl_growth, adl_media, ldv_media_inter, ldvBASE)
+```
+
+
+
+
+```{r}
+# subset for autocracies
+autocracies <- subset[which(subset$v2x_polyarchy <= 0.5), ]
+
+adl_3latent_auto <- dyn$lm(latentmean ~ gdppc_growth + LAGlatent + LAGgrowth + 
+    LAG2latent + v2mecenefm +
+      v2x_polyarchy + v2x_corr +
+      cnts_domestic6 + logPOP + logGDPpc, data = subset)
+summary(adl_3latent_auto)
+```
+
+
